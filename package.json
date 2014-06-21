@@ -1,0 +1,65 @@
+{
+  "name": "kami-line2d",
+  "version": "1.0.0",
+  "description": "line rendering for kami/webgl",
+  "main": "index.js",
+  "license": "MIT",
+  "author": "Matt DesLauriers <dave.des@gmail.com>",
+  "dependencies": {
+    "brfs": "^1.1.1",
+    "kami-mesh-buffer": "^1.0.5",
+    "kami-shader": "^1.0.10",
+    "kami-util": "^1.1.1",
+    "klasse": "^1.0.8",
+    "vecmath": "^0.1.1"
+  },
+  "devDependencies": {
+    "cam3d": "^1.0.1",
+    "kami-white-texture": "^1.0.0",
+    "tape": "~2.13.2",
+    "webgl-context": "^1.2.1"
+  },
+  "scripts": {
+    "test": "tape test.js"
+  },
+  "testling": {
+    "files": "test.js",
+    "browsers": [
+      "ie/6..latest",
+      "chrome/22..latest",
+      "firefox/16..latest",
+      "safari/latest",
+      "opera/11.0..latest",
+      "iphone/6",
+      "ipad/6",
+      "android-browser/latest"
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/mattdesl/kami-lines.git"
+  },
+  "homepage": "https://github.com/mattdesl/kami-lines",
+  "bugs": {
+    "url": "https://github.com/mattdesl/kami-lines/issues"
+  },
+  "keywords": [
+    "line",
+    "webgl",
+    "glsl",
+    "lines",
+    "2d",
+    "3d",
+    "polyline",
+    "stroke",
+    "edge",
+    "contour",
+    "gl_lines",
+    "gl"
+  ],
+  "browserify": {
+    "transform": [
+      "brfs"
+    ]
+  }
+}
