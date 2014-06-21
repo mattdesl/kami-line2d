@@ -8,6 +8,8 @@ var DynamicMesh = require('kami-dynamic-mesh');
 var Mesh = require('kami-mesh-buffer');
 var wrapContext = require('kami-util').wrapContext;
 
+var Texture = require('kami-texture');
+
 var fs = require('fs');
 var DEFAULT_VERT_SHADER = fs.readFileSync(__dirname + '/line.vert', 'utf8');
 var DEFAULT_FRAG_SHADER = fs.readFileSync(__dirname + '/line.frag', 'utf8');
@@ -16,15 +18,26 @@ var DEFAULT_FRAG_SHADER = fs.readFileSync(__dirname + '/line.frag', 'utf8');
 
 var tmp = new Vector2();
 var tmp2 = new Vector2();
+var tmp3 = new Vector2();
 
-var perp = new Vector2();
+var p0 = new Vector2();
+var p1 = new Vector2();
+var p2 = new Vector2();
 
-var leftA = new Vector2();
-var leftB = new Vector2();
-var rightA = new Vector2();
-var rightB = new Vector2();
+var tmpNormal = new Vector2();
+
+var miter = new Vector2();
+
+var SQRT_2 = Math.sqrt(2);
+
+
 
 function SegmentInfo() {
+    this.start = new Vector2();
+    this.end = new Vector2();
+
+    this.hasPrevious = false;
+
     //the corners
     this.corners = [
         new Vector2(),
@@ -32,16 +45,20 @@ function SegmentInfo() {
         new Vector2(),
         new Vector2()
     ];
+}
 
-    //edge coefficients
-    this.edges = [
-        new Vector3(),
-        new Vector3()
-    ];
+SegmentInfo.prototype.copy = function(line) {
+    this.start.copy(line.start);
+    this.end.copy(line.end);
+    this.hasPrevious = line.hasPrevious;
+    this.corners[0].copy(line.corners[0]);
+    this.corners[1].copy(line.corners[1]);
+    this.corners[2].copy(line.corners[2]);
+    this.corners[3].copy(line.corners[3]);
 }
 
 //Determine the normal of line AB
-function normal(start, end, out) {
+function getNormal(start, end, out) {
     if (!out)
         out = new Vector2();
 
@@ -55,17 +72,14 @@ function normal(start, end, out) {
     return out;
 }
 
-function segment(start, end, thickness, normal, out) {
+function getSegment(start, end, thickness, normal, out) {
     if (!out)
         out = new SegmentInfo();
 
     var r = thickness/2;
 
-    //save the length...
-    var nlen = tmp.copy(normal).length();
-    
-    //scaled normal for line width
-    tmp.scale(r);
+    //scaled normal for line distance
+    tmp.copy(normal).scale(r);
 
     //determine corner points
     var c = out.corners;
@@ -74,33 +88,55 @@ function segment(start, end, thickness, normal, out) {
     c[2].copy( end ).sub(tmp);
     c[3].copy( end ).add(tmp);
 
-    //determine scale
-    var s = 1 / (2*r + nlen);
-
-    var p0x = c[0].x,
-        p0y = c[0].y,
-        p1x = c[1].x,
-        p1y = c[1].y,
-        p2x = c[2].x,
-        p2y = c[2].y;
-
-    //compute linear coefficients for edge functions
-    var e = out.edges;
-    e[0].x = p0y - p3y;
-    e[0].y = p3x - p0x;
-    e[0].z = p0x*p3y - p0y*p3x;
-
-    e[1].x = p2y - p1y;
-    e[1].y = p1x - p2x;
-    e[1].z = p2x*p1y - p2y*p1x;
-
-    //scale them by distance
-    e[0].scale(s);
-    e[1].scale(s);
-
+    out.start.copy(start);
+    out.end.copy(end);
     return out;
 }
 
+//Joins the last segment with a new end point
+//This assumes that the end of the last segment is equal to the start
+//of our new segment
+function joinSegments(segment, lastSegment, thickness, normal, miterLimit) {
+    p0.copy(lastSegment.start);
+    p1.copy(lastSegment.end);
+    p2.copy(segment.end);
+
+    segment.start.copy(p1);
+    segment.end.copy(p2);
+
+    //get the normals of the lines
+    tmp.copy( p2 ).sub( p1 ).normalize();
+    tmp2.copy( p1 ).sub( p0 ).normalize();
+
+    //get the angle between them
+    var dotProd = tmp.dot(tmp2);
+
+    if (dotProd < -miterLimit)
+        return;
+
+    //compute tangent between the two lines    
+    tmp.add(tmp2).normalize();
+
+    //the miter line is the perpendicular to the tangent
+    miter.x = -tmp.y;
+    miter.y = tmp.x;
+
+    //scale the miter by thickness
+    var miterLen = (thickness/2) / miter.dot( normal );
+    miter.scale(miterLen);
+
+    //now reconstruct the two segments based on join
+    var c0 = lastSegment.corners;
+    var c1 = segment.corners;
+
+    //scaled normal for line distance
+    tmp2.copy(normal).scale(thickness/2);
+
+    c0[2].copy( p1 ).sub(miter);
+    c0[3].copy( p1 ).add(miter);
+    c1[0].copy( p1 ).add(miter);
+    c1[1].copy( p1 ).sub(miter);
+}
 
 var LineRenderer = new Class({
 
@@ -112,6 +148,10 @@ var LineRenderer = new Class({
         this.context = wrapContext(context);
         options = options||{};
 
+        this.texture = new Texture(context, {
+            src: 'gauss.png'
+        });
+        this.texture.setFilter(Texture.Filter.LINEAR);
 
         var size = options.size||500;
 
@@ -123,13 +163,22 @@ var LineRenderer = new Class({
         this.vertices = new Float32Array(numVerts);
         this.thickness = 1;
 
-        this.smoothingFactor = new Vector2(1, 0.8);
+        this.lastSegment = new SegmentInfo();
+        this.currentSegment = new SegmentInfo();
+        this.continuous = false;
+        this.placedFirstPoint = false;
+        this.hasSegment = false;
+        this.lastMoveTo = new Vector2();
+
+        this.miterLimit = 0.9;
+
+        this.smoothingFactor = new Vector2(1, 0.9);
         
         /** The 'pen' is the position at which the line is currently
          being drawn. */
         this.pen = new Vector2();
 
-        var shader = this._createShader();
+        var shader = this._createShader(context);
         BaseMixins.call(this, this.context.gl, shader);
 
         this.dynamicMesh = new DynamicMesh(context, {
@@ -150,8 +199,8 @@ var LineRenderer = new Class({
      * @protected
      * @return {ShaderProgram} a new instance of ShaderProgram
      */
-    _createShader: function() {
-        var shader = new ShaderProgram(this.context,
+    _createShader: function(context) {
+        var shader = new ShaderProgram(context,
                 LineRenderer.DEFAULT_VERT_SHADER, 
                 LineRenderer.DEFAULT_FRAG_SHADER);
         if (shader.log)
@@ -191,101 +240,160 @@ var LineRenderer = new Class({
 
     },
 
+    //draws a segment with smoothing
+    _drawSegment: function(line, hardLeft, hardRight) {
+        var thickness = this.thickness,
+            halfThick = thickness/2,
+            drawThickness = thickness;
 
+        var start = line.start,
+            end = line.end;
+        var axisAligned = (start.x===end.x || start.y===end.y);
 
-    /**
-     * Draws a single segment, not intended to be
-     * connected with any other segments, and with no end
-     * caps. This is useful for, say, a hard-edge rectangle stroke,
-     * and is used internally to create straight lines.
-     *
-     * You can force the left or right edges to be "hard" (no anti-aliasing),
-     * as they are smoothed by default. However, if the line is straight on 
-     * either axis (equal end/start components), 
-     * no smoothing will be applied to any edge.
-     * 
-     * @param  {[type]} x1 [description]
-     * @param  {[type]} y1 [description]
-     * @param  {[type]} x2 [description]
-     * @param  {[type]} y2 [description]
-     * @return {[type]}    [description]
-     */
-    segment: function( start, end, hardLeftEdge, hardRightEdge ) {
-        var m = this.dynamicMesh,
-            c = this.color;
-        var disableSmooth = this.thickness<1 || start.x===end.x || start.y===end.y;
-        var halfThick = this.thickness/2;
-
-        //if we aren't axis aligned, we need to push the triangles out
-        //so that when we smooth we aren't losing any width
-        if (!disableSmooth)  {
-            halfThick += (1 * this.smoothingFactor.y);
-        }
-        halfThick = Math.ceil(halfThick);
-
-            //halfThick = (this.thickness/2 + (1.0/halfThick * this.smoothingFactor.y));
+        if (thickness<=1.5) 
+            axisAligned = true;
         
-        var xdist = start.distSq(end) * this.smoothingFactor.x;
+        if (!axisAligned) 
+            drawThickness = Math.ceil(thickness + SQRT_2 + 0.5);
 
-        //determine direction, normalized 
-        tmp.copy(end).sub(start).normalize();
+        var e0 = -1;
+        var e1 = -1; 
 
-        //determine perpendicular and scale it to half width
-        perp.set( -tmp.y, tmp.x );
-        perp.scale( halfThick );
+        //disable edge anti-aliasing
+        if (!axisAligned) {
+            //the x distance (squared) from start to end point
+            //multiplied by our smoothing factor
+            e0 = start.distSq(end) * this.smoothingFactor.x;
 
-        //get edge points
-        leftB.copy(start).add(perp); //bottom left
-        leftA.copy(start).sub(perp); //top left
-
-        rightB.copy(end).add(perp); //bottom right
-        rightA.copy(end).sub(perp); //top right
-
-        halfThick *= this.smoothingFactor.y;
-        //if we are axis-aligned... make sure it's straight
-        if (disableSmooth) {
-            halfThick *= -1; 
-            hardLeftEdge = true;
-            hardRightEdge = true;
-        } 
-
-        if (this.thickness < 10) {
-            hardLeftEdge = true;
-            hardRightEdge = true;
+            //the y distance from end-to-end of line thickness
+            e1 = halfThick * this.smoothingFactor.y;
         }
 
-        //Using a negative sign disables the anti-aliasing for that edge
-        var leftx = hardLeftEdge ? -xdist : xdist;
-        var rightx = hardRightEdge ? -xdist : xdist;
+        var m = this.dynamicMesh,
+            color = this.color;
+        var c = line.corners;  
+        hardLeft = !!hardLeft;
+        hardRight = !!hardRight;
 
-        //make triangle in clockwise, starting from bototm left
-        m.colorPacked(c);
+        m.colorPacked(color);
         m.texCoord(0, 0);
-        m.vertex(leftB.x, leftB.y, leftx, halfThick);
-        m.colorPacked(c);
+        m.vertex(c[0].x, c[0].y, hardLeft ? -1 : e0, e1);
+        m.colorPacked(color);
         m.texCoord(0, 1);
-        m.vertex(leftA.x, leftA.y, leftx, halfThick);
-        m.colorPacked(c);
+        m.vertex(c[1].x, c[1].y, hardLeft ? -1 : e0, e1);
+        m.colorPacked(color);
         m.texCoord(1, 1);
-        m.vertex(rightA.x, rightA.y, rightx, halfThick);
+        m.vertex(c[2].x, c[2].y, hardRight ? -1 : e0, e1);
 
-        m.colorPacked(c);
+        m.colorPacked(color);
         m.texCoord(1, 1);
-        m.vertex(rightA.x, rightA.y, rightx, halfThick);
-        m.colorPacked(c);
+        m.vertex(c[2].x, c[2].y, hardRight ? -1 : e0, e1);
+        m.colorPacked(color);
         m.texCoord(1, 0);
-        m.vertex(rightB.x, rightB.y, rightx, halfThick);
-        m.colorPacked(c);
+        m.vertex(c[3].x, c[3].y, hardRight ? -1 : e0, e1);
+        m.colorPacked(color);
         m.texCoord(0, 0);
-        m.vertex(leftB.x, leftB.y, leftx, halfThick);
+        m.vertex(c[0].x, c[0].y, hardLeft ? -1 : e0, e1);
+    },  
+
+    _drawLastSegment: function() {
+        if (this.hasSegment) {
+            this._drawSegment(this.currentSegment, this.currentSegment.hasPrevious, false);
+            this.hasSegment = false;
+        }
+    },
+
+    _disconnectedSegment: function(start, end) {
+        getNormal(start, end, tmpNormal);
+        getSegment(start, end, this.thickness, tmpNormal, this.currentSegment);
+
+        //since we are disconnected, both edges should be soft
+        this.currentSegment.hasPrevious = false;
+        this.lastSegment.copy(this.currentSegment);
+    },
+
+    _joinSegment: function(nextPoint) {
+        var thickness = this.thickness,
+            halfThick = thickness/2,
+            drawThickness = thickness;
+
+        var mid = this.lastSegment.end;
+
+        
+        
+        //first get a regular segment for the new line
+        getNormal(mid, nextPoint, tmpNormal);
+        getSegment(mid, nextPoint, this.thickness, tmpNormal, this.currentSegment);
+
+        //now join the new segment with the last
+        joinSegments(this.currentSegment, this.lastSegment, thickness, tmpNormal, this.miterLimit);
+
+        //draw the last segment with a hard edge for miter
+        this._drawSegment(this.lastSegment, this.lastSegment.hasPrevious, true);
+
+        // swap segments
+        // var t = this.lastSegment;
+        // this.lastSegment = this.currentSegment;
+        // this.currentSegment = t;
+
+        //prepare the segments for the next command
+        this.currentSegment.hasPrevious = true;
+        this.lastSegment.copy(this.currentSegment)
     },
 
     moveTo: function( x, y ) {
+        var oldX = this.pen.x,
+            oldY = this.pen.y;
+
         this.pen.set( x, y );
+
+        //if new position is different, we are
+        //drawing a discontinuous line
+        if (this.pen.x !== this.lastMoveTo.x || this.pen.y !== this.lastMoveTo.y) {
+            this.continuous = false;
+            this._drawLastSegment();
+        }
+        this.placedFirstPoint = true;
+        this.lastMoveTo.copy(this.pen);
     },
 
     lineTo: function( x, y ) {
+        //if the user is issuing lineTo as the first
+        //command, then assume it is a moveTo
+        if (!this.placedFirstPoint) {
+            this.placedFirstPoint = true;
+            this.moveTo(x, y);
+        }
+        //If we are continuing from another lineTo command,
+        //we will want to join this new point with the last
+        else if (this.continuous) {
+            tmp3.set(x, y);
 
+
+            //join the new segment with the last one
+            this._joinSegment( tmp3 );
+            //move pen to end of line
+            this.pen.copy(tmp3);
+               
+            //make sure to draw the segment at end()
+            this.hasSegment = true;
+        } 
+        //otherwise, we can draw a simple straight segment
+        else {
+            console.log("disconnected");
+
+            tmp3.set(x, y);
+            //place a new disconnected segment
+            this._disconnectedSegment( this.pen, tmp3 );
+            //move the pen to end of line
+            this.pen.copy(tmp3);
+
+            //make sure to draw the segment at end()
+            this.hasSegment = true;
+        }
+
+        //and we assume the next move will be continuous
+        this.continuous = true;
     }, 
 
     setProjectionMatrix: function(proj) {
@@ -308,6 +416,13 @@ var LineRenderer = new Class({
         gl.disable(gl.DEPTH_TEST);
         this.dynamicMesh.begin();
 
+        this.texture.bind();
+
+        this.continuous = false;
+        this.placedFirstPoint = false;
+        this.currentSegment.hasPrevious = false;
+        this.lastSegment.hasPrevious = false;
+
         if (this._blendingEnabled) {
             gl.enable(gl.BLEND);
             //todo: fix
@@ -325,6 +440,9 @@ var LineRenderer = new Class({
     end: function()  {
         if (!this.drawing)
             throw "batch.begin() must be called before end";
+
+        this._drawLastSegment();
+
         if (this.idx > 0)
             this.flush();
         var gl = this.context.gl;

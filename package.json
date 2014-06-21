@@ -9,6 +9,7 @@
     "brfs": "^1.1.1",
     "kami-mesh-buffer": "^1.0.5",
     "kami-shader": "^1.0.10",
+    "kami-texture": "^1.0.10",
     "kami-util": "^1.1.1",
     "klasse": "^1.0.8",
     "vecmath": "^0.1.1"
