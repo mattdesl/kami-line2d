@@ -1,5 +1,5 @@
 var size = 350;
-var thickness = 10.5;
+var thickness = 10;
 
 var gl = require('webgl-context')({ 
         width: size, 
@@ -38,19 +38,33 @@ function render() {
     // lineBatch.lineTo(150, 50);
     // lineBatch.lineTo(25, 80);
 
+    var rect = {
+        x: 50,
+        y: 50,
+        width: 100,
+        height: 100
+    };
 
-    lineBatch.moveTo(70, 25);
-    lineBatch.lineTo(100, 95);
-    lineBatch.lineTo(150, 125);
-    lineBatch.lineTo(155, 50);
-    lineBatch.lineTo(170, 100);
+    lineBatch.moveTo(rect.x, rect.y);
+    lineBatch.lineTo(rect.x+rect.width, rect.y);
+    lineBatch.lineTo(rect.x+rect.width, rect.y+rect.height);
+    lineBatch.lineTo(rect.x, rect.y+rect.height);
+    lineBatch.lineTo(rect.x, rect.y);
+    
+    // lineBatch.lineTo(105, 50);
+    // lineBatch.lineTo(179, 40);
+    // lineBatch.lineTo(200, 100);
+    // lineBatch.lineTo(300, 100);
+    // lineBatch.lineTo(100, 300);
+    // lineBatch.lineTo(100, 300);
+    // lineBatch.lineTo(200, 300);
 
-    lineBatch.moveTo(25, 25);
-    lineBatch.lineTo(50, 100);
+    // lineBatch.moveTo(25, 25);
+    // lineBatch.lineTo(50, 100);
 
 
-    lineBatch.moveTo(50, 25);
-    lineBatch.lineTo(20, 100);
+    // lineBatch.moveTo(50, 25);
+    // lineBatch.lineTo(20, 100);
 
     // lineBatch.moveTo(50, 15);
     // lineBatch.lineTo(15, 15);

@@ -13,7 +13,9 @@ varying vec2 v_smooth_enabled;
 void main() {
 	vec2 pos = Position.xy;
 
+
 	gl_Position = u_projModelView * vec4(pos, 0.0, 1.0);
+
 	v_col = Color * (256.0/255.0);
 	v_texCoord0 = TexCoord0;
 
@@ -22,8 +24,7 @@ void main() {
 	//Position.w holds the half thickness from top to bottom (y smooth)
 	//Negative values will disable the shading for that edge entirely
 
-	float yAmt = abs(Position.w);
-	vec2 smoothAmt = 1.0 / vec2( sqrt(abs(Position.z))/2.0, yAmt );
+	vec2 smoothAmt = 1.0 / vec2( sqrt(abs(Position.z))/2.0, abs(Position.w) );
 	v_smooth = clamp( smoothAmt, 0.0, 1.0 );
 	v_smooth_enabled = sign( Position.zw );
 }

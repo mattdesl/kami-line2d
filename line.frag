@@ -17,7 +17,8 @@ void main() {
 
 	// float index = min(center.x, center.y);
 	// float filter = texture2D(u_sampler0, vec2(index, 0.0)).x;
-	
+
 	float smoothing = clamp(center.x * center.y, 0.0, 1.0);
 	gl_FragColor = v_col * smoothing;
+	// gl_FragColor = vec4(smoothing, 1.0, 1.0, 1.0);
 }

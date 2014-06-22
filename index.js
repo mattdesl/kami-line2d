@@ -31,6 +31,10 @@ var miter = new Vector2();
 var SQRT_2 = Math.sqrt(2);
 
 
+var NONE = 0;
+var ROUND = 1;
+var MITER = 2;
+var BEVEL = 3;
 
 function SegmentInfo() {
     this.start = new Vector2();
@@ -45,16 +49,42 @@ function SegmentInfo() {
         new Vector2(),
         new Vector2()
     ];
+
+    //The 'computed' join (i.e. after miter limit is applied)
+    //If join is NONE or MITER, you don't need to draw any join
+    this.joinType = NONE;
+
+    //The vertices that make up this join, in the following order:
+    // 0 - the shared vertex
+    // 1 - the tip of the last segment
+    // 2 - the tip of the current segment
+    this.joinVertices = [
+        new Vector2(),
+        new Vector2(),
+        new Vector2()
+    ];
+
+    //The dot product with the last line, 
+    //if > 0 we should flip the texture coords
+    this.dot = 0;
 }
 
 SegmentInfo.prototype.copy = function(line) {
     this.start.copy(line.start);
     this.end.copy(line.end);
     this.hasPrevious = line.hasPrevious;
+
+    this.dot = line.dot;
+
     this.corners[0].copy(line.corners[0]);
     this.corners[1].copy(line.corners[1]);
     this.corners[2].copy(line.corners[2]);
     this.corners[3].copy(line.corners[3]);
+
+    this.joinType = line.joinType;
+    this.joinVertices[0].copy(line.joinVertices[0]);
+    this.joinVertices[1].copy(line.joinVertices[1]);
+    this.joinVertices[2].copy(line.joinVertices[2]);
 }
 
 //Determine the normal of line AB
@@ -70,6 +100,43 @@ function getNormal(start, end, out) {
     out.x = -tmp2.y;
     out.y = tmp2.x;
     return out;
+}
+
+function arc(origin, r, step, angle1, angle2) {
+    var points = [];
+    var incremental = true;
+    if (angle1 > angle2)
+        incremental = false;
+    if (incremental) {
+        for (var a=angle1; a<angle2; a+=step) {
+            var x = Math.cos(a)*r+origin.x,
+                y = Math.sin(a)*r+origin.y;
+            points.push( {x: x, y: y} );
+        }
+    } else {
+        for (var a=angle1; a>angle2; a-=step) {
+            var x = Math.cos(a)*r+origin.x,
+                y = Math.sin(a)*r+origin.y;
+            points.push( {x: x, y: y} );
+        }
+    }
+    return points;
+}
+
+function arcJoin(origin, p0, p1, r) {
+    tmp.copy(origin).sub(p0).normalize();
+    tmp2.copy(origin).sub(p1).normalize();
+    var a1 = Math.acos(tmp.x);
+    var a2 = Math.acos(tmp2.x);
+
+    if (tmp.y > 0) 
+        a1 = 2*Math.PI-a1;
+    if (tmp2.y > 0)
+        a2 = 2*Math.PI-a2;
+
+    // a1 = -Math.PI;
+    // a2 = Math.PI;
+    return arc(origin, r, Math.PI/18, a1, a2);
 }
 
 function getSegment(start, end, thickness, normal, out) {
@@ -93,10 +160,11 @@ function getSegment(start, end, thickness, normal, out) {
     return out;
 }
 
+
 //Joins the last segment with a new end point
 //This assumes that the end of the last segment is equal to the start
 //of our new segment
-function joinSegments(segment, lastSegment, thickness, normal, miterLimit) {
+function joinSegments(segment, lastSegment, thickness, normal, joinType, miterLimit) {
     p0.copy(lastSegment.start);
     p1.copy(lastSegment.end);
     p2.copy(segment.end);
@@ -111,11 +179,19 @@ function joinSegments(segment, lastSegment, thickness, normal, miterLimit) {
     //get the angle between them
     var dotProd = tmp.dot(tmp2);
 
-    if (dotProd < -miterLimit)
-        return;
-
     //compute tangent between the two lines    
     tmp.add(tmp2).normalize();
+
+    //If we're using bevel, we need to know 
+    //the direction 
+    var dir = tmp.dot( normal );
+    //Straight line needs no join..
+    if (dir === 0)
+        return;
+
+    //if we're using miter, fallback to bevel for sharp edges
+    if (joinType === MITER && dotProd < -miterLimit)
+        joinType = BEVEL;
 
     //the miter line is the perpendicular to the tangent
     miter.x = -tmp.y;
@@ -132,10 +208,42 @@ function joinSegments(segment, lastSegment, thickness, normal, miterLimit) {
     //scaled normal for line distance
     tmp2.copy(normal).scale(thickness/2);
 
-    c0[2].copy( p1 ).sub(miter);
-    c0[3].copy( p1 ).add(miter);
-    c1[0].copy( p1 ).add(miter);
-    c1[1].copy( p1 ).sub(miter);
+    if (joinType===MITER) {
+        c0[2].copy( p1 ).sub(miter);
+        c0[3].copy( p1 ).add(miter);
+        c1[0].copy( p1 ).add(miter);
+        c1[1].copy( p1 ).sub(miter);
+    } else {
+        if (dir > 0) {
+            c0[2].copy( p1 ).sub(miter);
+            c1[1].copy( p1 ).sub(miter);
+        } else {
+            c0[3].copy( p1 ).add(miter);
+            c1[0].copy( p1 ).add(miter);
+        }
+    }
+        
+    lastSegment.joinType = joinType;
+    segment.joinType = joinType;
+
+    //determine the vertices that need to be joined
+    //in the correct order
+    //(for bevel & round joins)
+    if (dir > 0) {
+        segment.joinVertices[0].copy( c0[2] );
+        segment.joinVertices[1].copy( c0[3] );
+        segment.joinVertices[2].copy( c1[0] );
+    } else {
+        segment.joinVertices[0].copy( c0[3] );
+        segment.joinVertices[1].copy( c0[2] );
+        segment.joinVertices[2].copy( c1[1] );
+    }
+
+    segment.dot = dir;
+    lastSegment.dot = dir;
+
+    for (var i=0; i<lastSegment.joinVertices.length; i++)
+        lastSegment.joinVertices[i].copy(segment.joinVertices[i]);
 }
 
 var LineRenderer = new Class({
@@ -161,6 +269,7 @@ var LineRenderer = new Class({
         
         //vertex data
         this.vertices = new Float32Array(numVerts);
+        
         this.thickness = 1;
 
         this.lastSegment = new SegmentInfo();
@@ -169,10 +278,12 @@ var LineRenderer = new Class({
         this.placedFirstPoint = false;
         this.hasSegment = false;
         this.lastMoveTo = new Vector2();
+        this.roundSegments = 5;
 
-        this.miterLimit = 0.9;
+        this.joinType = MITER;
+        this.miterLimit = 0.75;
 
-        this.smoothingFactor = new Vector2(1, 0.9);
+        this.smoothingFactor = new Vector2(1, 1);
         
         /** The 'pen' is the position at which the line is currently
          being drawn. */
@@ -190,6 +301,16 @@ var LineRenderer = new Class({
             shader: shader
         });
         this.mesh = this.dynamicMesh.mesh;
+    },
+
+    thickness: {
+        set: function(val) {
+            this._thickness = val||0;
+            this._drawThickness = Math.ceil(this._thickness + SQRT_2 + 0.5);
+        },
+        get: function() {
+            return this._thickness;
+        }
     },
 
     /**
@@ -236,25 +357,122 @@ var LineRenderer = new Class({
         return LineRenderer.VERTEX_SIZE;
     },
 
-    _vertex: function() {
+    _drawSegmentJoin: function(line) {
+        if (line.joinType === NONE || line.joinType === MITER)
+            return;
 
+        var color = this.color;
+        var flip = line.dot > 0;
+        var u1 = flip ? 1 : 0;
+        var u2 = flip ? 0 : 1;
+
+        var c = line.joinVertices;
+        var thickness = this._drawThickness;
+
+        var axisAligned = false;
+        //if the bevel is axis aligned, don't smooth it
+        if (line.joinType === BEVEL) {
+            axisAligned = (c[1].x === c[2].x || c[1].y === c[2].y);
+        }
+
+        if (axisAligned)
+            thickness = this._thickness;
+
+        var halfThick = thickness/2;
+
+        var e0 = -1,
+            e1 = -1;
+
+        //disable edge anti-aliasing
+        if (!axisAligned) {
+            //the y distance from end-to-end of line thickness
+            e1 = halfThick * this.smoothingFactor.y;
+        }
+
+        if (line.joinType === BEVEL) {
+            this._joinVert(c[0], c[1], c[2], color, e0, e1, u1, u2);
+        } else if (line.joinType === ROUND) {
+            var points = arcJoin( line.end, c[1], c[2], halfThick );
+
+            var last = c[0];
+            var shared = c[0];
+            for (var j=0; j<points.length; j++) {
+                var pt = points[j];
+
+                this._joinVert(shared, last, pt, color, e0, e1, u1, u2);
+                last = pt;
+            }
+        }   
+    },
+
+    _joinVert: function(a, b, c, color, e0, e1, u1, u2) {
+        var m = this.dynamicMesh;
+            
+        m.colorPacked(color);
+        m.texCoord(u1, u1);
+        m.vertex(a.x, a.y, e0, e1);
+        m.colorPacked(color);
+        m.texCoord(u2, u2);
+        m.vertex(b.x, b.y, e0, e1);
+        m.colorPacked(color);
+        m.texCoord(u2, u2);
+        m.vertex(c.x, c.y, e0, e1);
+    },
+
+    _vert: function(m, x, y, e0, e1) {
+        if (LineRenderer.PIXEL_SNAP)
+            m.vertex( Math.round(x/0.5)*0.5, Math.round(y/0.5)*0.5, e0, e1 );
+        else 
+            m.vertex(x, y, e0, e1);
+    },
+
+    _quad: function(c, color, e0Left, e0Right, e1) {
+        var m = this.dynamicMesh;
+
+        m.colorPacked(color);
+        m.texCoord(0, 0);
+        this._vert(m, c[0].x, c[0].y, e0Left, e1);
+        m.colorPacked(color);
+        m.texCoord(0, 1);
+        this._vert(m, c[1].x, c[1].y, e0Left, e1);
+        m.colorPacked(color);
+        m.texCoord(1, 1);
+        this._vert(m, c[2].x, c[2].y, e0Right, e1);
+
+        m.colorPacked(color);
+        m.texCoord(1, 1);
+        this._vert(m, c[2].x, c[2].y, e0Right, e1);
+        m.colorPacked(color);
+        m.texCoord(1, 0);
+        this._vert(m, c[3].x, c[3].y, e0Right, e1);
+        m.colorPacked(color);
+        m.texCoord(0, 0);
+        this._vert(m, c[0].x, c[0].y, e0Left, e1);
     },
 
     //draws a segment with smoothing
-    _drawSegment: function(line, hardLeft, hardRight) {
-        var thickness = this.thickness,
-            halfThick = thickness/2,
-            drawThickness = thickness;
+    _drawSegment: function(line, hardLeft, hardRight, useJoin) {
+        //draw the join vertices with the last segment
+        if (useJoin) {
+            this._drawSegmentJoin(this.lastSegment);
+        }
+        
+        var thickness = this._drawThickness;
 
         var start = line.start,
             end = line.end;
         var axisAligned = (start.x===end.x || start.y===end.y);
 
-        if (thickness<=1.5) 
-            axisAligned = true;
+        // if (thickness<=1.5) 
+        //     axisAligned = true;
         
-        if (!axisAligned) 
-            drawThickness = Math.ceil(thickness + SQRT_2 + 0.5);
+        if (axisAligned)
+            thickness = this._thickness;
+
+        var halfThick = thickness/2;
+
+        // if (!axisAligned) 
+        //     drawThickness = Math.ceil(thickness + SQRT_2 + 0.5);
 
         var e0 = -1;
         var e1 = -1; 
@@ -269,36 +487,17 @@ var LineRenderer = new Class({
             e1 = halfThick * this.smoothingFactor.y;
         }
 
-        var m = this.dynamicMesh,
-            color = this.color;
+        var color = this.color;
         var c = line.corners;  
         hardLeft = !!hardLeft;
         hardRight = !!hardRight;
 
-        m.colorPacked(color);
-        m.texCoord(0, 0);
-        m.vertex(c[0].x, c[0].y, hardLeft ? -1 : e0, e1);
-        m.colorPacked(color);
-        m.texCoord(0, 1);
-        m.vertex(c[1].x, c[1].y, hardLeft ? -1 : e0, e1);
-        m.colorPacked(color);
-        m.texCoord(1, 1);
-        m.vertex(c[2].x, c[2].y, hardRight ? -1 : e0, e1);
-
-        m.colorPacked(color);
-        m.texCoord(1, 1);
-        m.vertex(c[2].x, c[2].y, hardRight ? -1 : e0, e1);
-        m.colorPacked(color);
-        m.texCoord(1, 0);
-        m.vertex(c[3].x, c[3].y, hardRight ? -1 : e0, e1);
-        m.colorPacked(color);
-        m.texCoord(0, 0);
-        m.vertex(c[0].x, c[0].y, hardLeft ? -1 : e0, e1);
+        this._quad(c, color, hardLeft ? -1 : e0, hardRight ? -1 : e0, e1);
     },  
 
     _drawLastSegment: function() {
-        if (this.hasSegment) {
-            this._drawSegment(this.currentSegment, this.currentSegment.hasPrevious, false);
+        if (this.hasSegment) {            
+            this._drawSegment(this.currentSegment, this.currentSegment.hasPrevious, false, false);
             this.hasSegment = false;
         }
     },
@@ -319,26 +518,19 @@ var LineRenderer = new Class({
 
         var mid = this.lastSegment.end;
 
-        
-        
         //first get a regular segment for the new line
         getNormal(mid, nextPoint, tmpNormal);
         getSegment(mid, nextPoint, this.thickness, tmpNormal, this.currentSegment);
 
         //now join the new segment with the last
-        joinSegments(this.currentSegment, this.lastSegment, thickness, tmpNormal, this.miterLimit);
+        joinSegments(this.currentSegment, this.lastSegment, thickness, tmpNormal, this.joinType, this.miterLimit);
+        this.currentSegment.hasPrevious = true;
 
         //draw the last segment with a hard edge for miter
-        this._drawSegment(this.lastSegment, this.lastSegment.hasPrevious, true);
-
-        // swap segments
-        // var t = this.lastSegment;
-        // this.lastSegment = this.currentSegment;
-        // this.currentSegment = t;
+        this._drawSegment(this.lastSegment, this.lastSegment.hasPrevious, true, true);
 
         //prepare the segments for the next command
-        this.currentSegment.hasPrevious = true;
-        this.lastSegment.copy(this.currentSegment)
+        this.lastSegment.copy(this.currentSegment);        
     },
 
     moveTo: function( x, y ) {
@@ -367,21 +559,24 @@ var LineRenderer = new Class({
         //If we are continuing from another lineTo command,
         //we will want to join this new point with the last
         else if (this.continuous) {
-            tmp3.set(x, y);
+            //we are continuing.. so we have a previous segment
+            this.currentSegment.hasPrevious = true;
+            
+            // this.lastSegment.hasPrevious = true;
 
+            tmp3.set(x, y);
 
             //join the new segment with the last one
             this._joinSegment( tmp3 );
+
             //move pen to end of line
             this.pen.copy(tmp3);
-               
+            
             //make sure to draw the segment at end()
             this.hasSegment = true;
         } 
         //otherwise, we can draw a simple straight segment
         else {
-            console.log("disconnected");
-
             tmp3.set(x, y);
             //place a new disconnected segment
             this._disconnectedSegment( this.pen, tmp3 );
@@ -457,6 +652,7 @@ var LineRenderer = new Class({
     },
 });
 
+LineRenderer.PIXEL_SNAP = false;
 LineRenderer.DEFAULT_FRAG_SHADER = DEFAULT_FRAG_SHADER;
 LineRenderer.DEFAULT_VERT_SHADER = DEFAULT_VERT_SHADER;
 LineRenderer.VERTEX_SIZE = 2 + 2 + 1;
