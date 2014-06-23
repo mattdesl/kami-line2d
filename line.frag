@@ -17,11 +17,11 @@ void main() {
 	vec2 scaledDistance = vec2( dot(v_edge0, p), dot(v_edge1, p) );
 
 	if (scaledDistance.x < 0.0 || scaledDistance.y < 0.0) {
-		discard;
+		// discard;
 	}
 
 	float index = min(scaledDistance.x, scaledDistance.y);
 	float filter = texture2D(u_sampler0, vec2(index, 0.0)).x;
 
-	gl_FragColor = vec4(vec3( v_edge1 ), 1.0);
+	gl_FragColor = vec4(v_edge0.xxx, 1.0);
 }

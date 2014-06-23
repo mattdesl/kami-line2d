@@ -46,6 +46,11 @@ void main() {
 	v_edge0 *= s;
 	v_edge1 *= s;
 
+	v_texCoord0.y = 1.0;
+	if (pos == p3 || pos == p1) {
+		v_texCoord0.y = 0.0;
+	}
+
 	//compute x texture coordinates
 	v_texCoord0.x = distance(pos, TexCoord0) / distance(TexCoord0, TexCoord1);
 }

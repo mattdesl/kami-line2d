@@ -99,7 +99,7 @@ var LineRenderer = new Class({
     thickness: {
         set: function(val) {
             this._thickness = val||0;
-            this._drawThickness = Math.ceil(this._thickness + SQRT_2 + 0.5);
+            this._drawThickness = Math.ceil(2 * (this._thickness/2) * SQRT_2);
         },
         get: function() {
             return this._thickness;
@@ -297,7 +297,7 @@ var LineRenderer = new Class({
 
     _disconnectedSegment: function(start, end) {
         getNormal(start, end, tmpNormal);
-        getSegment(start, end, this.thickness, tmpNormal, this.currentSegment);
+        getSegment(start, end, this._drawThickness, tmpNormal, this.currentSegment);
 
         //since we are disconnected, both edges should be soft
         this.currentSegment.hasPrevious = false;
@@ -313,10 +313,10 @@ var LineRenderer = new Class({
 
         //first get a regular segment for the new line
         getNormal(mid, nextPoint, tmpNormal);
-        getSegment(mid, nextPoint, this.thickness, tmpNormal, this.currentSegment);
+        getSegment(mid, nextPoint, this._drawThickness, tmpNormal, this.currentSegment);
 
         //now join the new segment with the last
-        joinSegments(this.currentSegment, this.lastSegment, thickness, tmpNormal, this.joinType, this.miterLimit);
+        joinSegments(this.currentSegment, this.lastSegment, this._drawThickness, tmpNormal, this.joinType, this.miterLimit);
         this.currentSegment.hasPrevious = true;
 
         //draw the last segment with a hard edge for miter

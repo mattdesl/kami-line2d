@@ -46,19 +46,19 @@ function render() {
     };
 
     lineBatch.moveTo(rect.x, rect.y);
-    lineBatch.lineTo(rect.x+rect.width, rect.y);
-    lineBatch.lineTo(rect.x+rect.width, rect.y+rect.height);
-    lineBatch.lineTo(rect.x, rect.y+rect.height);
-    lineBatch.lineTo(rect.x, rect.y);
+    lineBatch.lineTo(rect.x+rect.width, rect.y+2);
+    // lineBatch.lineTo(rect.x+rect.width, rect.y+rect.height);
+    // lineBatch.lineTo(rect.x, rect.y+rect.height);
+    // lineBatch.lineTo(rect.x, rect.y);
     
     // lineBatch.lineTo(105, 50);
     // lineBatch.lineTo(179, 40);
     // lineBatch.lineTo(200, 100);
     // lineBatch.lineTo(300, 100);
-    lineBatch.moveTo(200, 200);
-    lineBatch.lineTo(100, 300);
-    lineBatch.lineTo(100, 100);
-    lineBatch.lineTo(200, 300);
+    // lineBatch.moveTo(200, 200);
+    // lineBatch.lineTo(100, 300);
+    // lineBatch.lineTo(100, 100);
+    // lineBatch.lineTo(200, 300);
 
     // lineBatch.moveTo(25, 25);
     // lineBatch.lineTo(50, 100);
