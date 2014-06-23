@@ -2,7 +2,7 @@
 
 [![experimental](http://badges.github.io/stability-badges/dist/experimental.svg)](http://github.com/badges/stability-badges)
 
-line rendering for kami/webgl
+This is an experimental work in progress.
 
 ## Usage
 
