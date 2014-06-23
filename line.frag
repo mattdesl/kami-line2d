@@ -2,23 +2,26 @@
 precision mediump float;
 #endif
 varying vec4 v_col;
+varying vec3 v_edge0;
+varying vec3 v_edge1;
+
 varying vec2 v_texCoord0;
-varying vec2 v_smooth;
-varying vec2 v_smooth_enabled;
 
 uniform sampler2D u_sampler0;
-uniform vec2 resolution;
 
 void main() {
+	//sample position
+	vec3 p = vec3(gl_FragCoord.xy, 1.0);
 
-	vec2 center = 1.0 - abs(v_texCoord0 * 2.0 - 1.0);
-	center = smoothstep(vec2(0.0), v_smooth, center);
-	center = mix(vec2(1.0), center, v_smooth_enabled);
+	//evaluate edge functions f0, f1
+	vec2 scaledDistance = vec2( dot(v_edge0, p), dot(v_edge1, p) );
 
-	// float index = min(center.x, center.y);
-	// float filter = texture2D(u_sampler0, vec2(index, 0.0)).x;
+	if (scaledDistance.x < 0.0 || scaledDistance.y < 0.0) {
+		discard;
+	}
 
-	float smoothing = clamp(center.x * center.y, 0.0, 1.0);
-	gl_FragColor = v_col * smoothing;
-	// gl_FragColor = vec4(smoothing, 1.0, 1.0, 1.0);
+	float index = min(scaledDistance.x, scaledDistance.y);
+	float filter = texture2D(u_sampler0, vec2(index, 0.0)).x;
+
+	gl_FragColor = vec4(vec3( v_edge1 ), 1.0);
 }

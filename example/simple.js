@@ -1,5 +1,5 @@
 var size = 350;
-var thickness = 10;
+var thickness = 30;
 
 var gl = require('webgl-context')({ 
         width: size, 
@@ -25,7 +25,7 @@ var time = 0;
 
 function render() {
     time+=0.005;
-    // requestAnimationFrame(render);
+    requestAnimationFrame(render);
     gl.clearColor(0,0,0,1);
     gl.clear(gl.COLOR_BUFFER_BIT);
 
@@ -55,9 +55,10 @@ function render() {
     // lineBatch.lineTo(179, 40);
     // lineBatch.lineTo(200, 100);
     // lineBatch.lineTo(300, 100);
-    // lineBatch.lineTo(100, 300);
-    // lineBatch.lineTo(100, 300);
-    // lineBatch.lineTo(200, 300);
+    lineBatch.moveTo(200, 200);
+    lineBatch.lineTo(100, 300);
+    lineBatch.lineTo(100, 100);
+    lineBatch.lineTo(200, 300);
 
     // lineBatch.moveTo(25, 25);
     // lineBatch.lineTo(50, 100);

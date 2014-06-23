@@ -101,6 +101,8 @@ function getSegment(start, end, thickness, normal, out) {
 
     out.start.copy(start);
     out.end.copy(end);
+
+    
     return out;
 }
 

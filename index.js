@@ -72,7 +72,6 @@ var LineRenderer = new Class({
         this.placedFirstPoint = false;
         this.hasSegment = false;
         this.lastMoveTo = new Vector2();
-        this.roundSegments = 5;
 
         this.joinType = MITER;
         this.miterLimit = 0.75;
@@ -88,10 +87,10 @@ var LineRenderer = new Class({
 
         this.dynamicMesh = new DynamicMesh(context, {
             vertexCount: numVerts,
-            numTexCoords: 1,
+            numTexCoords: 2,
             hasNormals: false,
             hasColors: true,
-            positionComponents: 4,
+            positionComponents: 2,
             shader: shader
         });
         this.mesh = this.dynamicMesh.mesh;
@@ -202,46 +201,46 @@ var LineRenderer = new Class({
     _joinVert: function(a, b, c, color, e0, e1, u1, u2) {
         var m = this.dynamicMesh;
             
-        m.colorPacked(color);
-        m.texCoord(u1, u1);
-        m.vertex(a.x, a.y, e0, e1);
-        m.colorPacked(color);
-        m.texCoord(u2, u2);
-        m.vertex(b.x, b.y, e0, e1);
-        m.colorPacked(color);
-        m.texCoord(u2, u2);
-        m.vertex(c.x, c.y, e0, e1);
+        // m.colorPacked(color);
+        // m.texCoord(u1, u1);
+        // m.vertex(a.x, a.y, 0, 0);
+        // m.colorPacked(color);
+        // m.texCoord(u2, u2);
+        // m.vertex(b.x, b.y, 0, 0);
+        // m.colorPacked(color);
+        // m.texCoord(u2, u2);
+        // m.vertex(c.x, c.y, 0, 0);
     },
 
-    _vert: function(m, x, y, e0, e1) {
-        if (LineRenderer.PIXEL_SNAP)
-            m.vertex( Math.round(x/0.5)*0.5, Math.round(y/0.5)*0.5, e0, e1 );
-        else 
-            m.vertex(x, y, e0, e1);
-    },
 
-    _quad: function(c, color, e0Left, e0Right, e1) {
+    _quad: function(c, color, start, end) {
         var m = this.dynamicMesh;
 
         m.colorPacked(color);
-        m.texCoord(0, 0);
-        this._vert(m, c[0].x, c[0].y, e0Left, e1);
+        m.texCoord(start.x, start.y);
+        m.texCoord(end.x, end.y);
+        m.vertex(c[0].x, c[0].y);
         m.colorPacked(color);
-        m.texCoord(0, 1);
-        this._vert(m, c[1].x, c[1].y, e0Left, e1);
+        m.texCoord(start.x, start.y);
+        m.texCoord(end.x, end.y);
+        m.vertex(c[1].x, c[1].y);
         m.colorPacked(color);
-        m.texCoord(1, 1);
-        this._vert(m, c[2].x, c[2].y, e0Right, e1);
+        m.texCoord(start.x, start.y);
+        m.texCoord(end.x, end.y);
+        m.vertex(c[2].x, c[2].y);
 
         m.colorPacked(color);
-        m.texCoord(1, 1);
-        this._vert(m, c[2].x, c[2].y, e0Right, e1);
+        m.texCoord(start.x, start.y);
+        m.texCoord(end.x, end.y);
+        m.vertex(c[2].x, c[2].y);
         m.colorPacked(color);
-        m.texCoord(1, 0);
-        this._vert(m, c[3].x, c[3].y, e0Right, e1);
+        m.texCoord(start.x, start.y);
+        m.texCoord(end.x, end.y);
+        m.vertex(c[3].x, c[3].y);
         m.colorPacked(color);
-        m.texCoord(0, 0);
-        this._vert(m, c[0].x, c[0].y, e0Left, e1);
+        m.texCoord(start.x, start.y);
+        m.texCoord(end.x, end.y);
+        m.vertex(c[0].x, c[0].y);
     },
 
     //draws a segment with smoothing
@@ -286,7 +285,7 @@ var LineRenderer = new Class({
         hardLeft = !!hardLeft;
         hardRight = !!hardRight;
 
-        this._quad(c, color, hardLeft ? -1 : e0, hardRight ? -1 : e0, e1);
+        this._quad(c, color, start, end);
     },  
 
     _drawLastSegment: function() {
@@ -405,7 +404,8 @@ var LineRenderer = new Class({
         gl.disable(gl.DEPTH_TEST);
         this.dynamicMesh.begin();
 
-        this.texture.bind();
+        this.texture.bind();    
+        this.dynamicMesh.shader.setUniformf("thickness", this.thickness);
 
         this.continuous = false;
         this.placedFirstPoint = false;
