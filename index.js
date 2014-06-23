@@ -100,7 +100,7 @@ var LineRenderer = new Class({
     thickness: {
         set: function(val) {
             this._thickness = val||0;
-            this._drawThickness = Math.ceil(this._thickness + SQRT_2 + 0.5);
+            this._drawThickness = Math.ceil((this._thickness) + 0);
         },
         get: function() {
             return this._thickness;
@@ -164,13 +164,12 @@ var LineRenderer = new Class({
         var thickness = this._drawThickness;
 
         var axisAligned = false;
-        //if the bevel is axis aligned, don't smooth it
-        if (line.joinType === BEVEL) {
-            axisAligned = (c[1].x === c[2].x || c[1].y === c[2].y);
-        }
-
-        if (axisAligned)
-            thickness = this._thickness;
+        
+        //NOTE: round edge is going to break if the previous
+        //line is axis-aligned and the next isn't !
+        var thickness = line.joinType === ROUND 
+                    ? this._drawThickness
+                    : this._getComputedThickness(c[1], c[2]);
 
         var halfThick = thickness/2;
 
@@ -178,7 +177,7 @@ var LineRenderer = new Class({
             e1 = -1;
 
         //disable edge anti-aliasing
-        if (!axisAligned) {
+        if (!axisAligned || !LineRenderer.AXIS_SNAP) {
             //the y distance from end-to-end of line thickness
             e1 = halfThick * this.smoothingFactor.y;
         }
@@ -214,7 +213,7 @@ var LineRenderer = new Class({
     },
 
     _vert: function(m, x, y, e0, e1) {
-        if (LineRenderer.PIXEL_SNAP)
+        if (this._thickness <= 1.5 && LineRenderer.PIXEL_SNAP)
             m.vertex( Math.round(x/0.5)*0.5, Math.round(y/0.5)*0.5, e0, e1 );
         else 
             m.vertex(x, y, e0, e1);
@@ -250,29 +249,19 @@ var LineRenderer = new Class({
         if (useJoin) {
             this._drawSegmentJoin(this.lastSegment);
         }
-        
-        var thickness = this._drawThickness;
 
         var start = line.start,
-            end = line.end;
-        var axisAligned = (start.x===end.x || start.y===end.y);
+            end = line.end,
+            thickness = this._getComputedThickness(start, end),
+            halfThick = thickness/2;
 
-        // if (thickness<=1.5) 
-        //     axisAligned = true;
-        
-        if (axisAligned)
-            thickness = this._thickness;
+        var e0 = Number.MIN_VALUE;
+        var e1 = Number.MIN_VALUE;
 
-        var halfThick = thickness/2;
-
-        // if (!axisAligned) 
-        //     drawThickness = Math.ceil(thickness + SQRT_2 + 0.5);
-
-        var e0 = -1;
-        var e1 = -1; 
+        var axisAligned = start.x===end.x||start.y===end.y;
 
         //disable edge anti-aliasing
-        if (!axisAligned) {
+        if (!axisAligned || !LineRenderer.AXIS_SNAP) {
             //the x distance (squared) from start to end point
             //multiplied by our smoothing factor
             e0 = start.distSq(end) * this.smoothingFactor.x;
@@ -296,9 +285,18 @@ var LineRenderer = new Class({
         }
     },
 
+    _getComputedThickness: function(start, end) {
+        var axisAligned = (start.x===end.x || start.y===end.y);
+        if (axisAligned && LineRenderer.AXIS_SNAP)
+            return this._thickness;
+        return this._drawThickness;
+    },
+
     _disconnectedSegment: function(start, end) {
+        var thickness = this._getComputedThickness(start, end);
+
         getNormal(start, end, tmpNormal);
-        getSegment(start, end, this.thickness, tmpNormal, this.currentSegment);
+        getSegment(start, end, thickness, tmpNormal, this.currentSegment);
 
         //since we are disconnected, both edges should be soft
         this.currentSegment.hasPrevious = false;
@@ -306,15 +304,15 @@ var LineRenderer = new Class({
     },
 
     _joinSegment: function(nextPoint) {
-        var thickness = this.thickness,
+        var mid = this.lastSegment.end;
+
+        var thickness = this._getComputedThickness(this.lastSegment.start, this.lastSegment.end),
             halfThick = thickness/2,
             drawThickness = thickness;
 
-        var mid = this.lastSegment.end;
-
         //first get a regular segment for the new line
         getNormal(mid, nextPoint, tmpNormal);
-        getSegment(mid, nextPoint, this.thickness, tmpNormal, this.currentSegment);
+        getSegment(mid, nextPoint, thickness, tmpNormal, this.currentSegment);
 
         //now join the new segment with the last
         joinSegments(this.currentSegment, this.lastSegment, thickness, tmpNormal, this.joinType, this.miterLimit);
@@ -407,6 +405,8 @@ var LineRenderer = new Class({
 
         this.texture.bind();
 
+        this.dynamicMesh.shader.setUniformf("thickness", this.thickness);
+
         this.continuous = false;
         this.placedFirstPoint = false;
         this.currentSegment.hasPrevious = false;
@@ -446,7 +446,8 @@ var LineRenderer = new Class({
     },
 });
 
-LineRenderer.PIXEL_SNAP = false;
+LineRenderer.AXIS_SNAP = true;
+LineRenderer.PIXEL_SNAP = true;
 LineRenderer.DEFAULT_FRAG_SHADER = DEFAULT_FRAG_SHADER;
 LineRenderer.DEFAULT_VERT_SHADER = DEFAULT_VERT_SHADER;
 LineRenderer.VERTEX_SIZE = 2 + 2 + 1;
